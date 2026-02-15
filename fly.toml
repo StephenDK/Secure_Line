@@ -1,36 +1,23 @@
-# Fly.io configuration
-app = "secure-line"
-primary_region = "ord"
+# fly.toml app configuration file generated for app-summer-glade-9002 on 2026-02-15T19:58:02Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'app-summer-glade-9002'
+primary_region = 'iad'
 
 [build]
-  dockerfile = "Dockerfile"
 
-[env]
-  NODE_ENV = "production"
-  PORT = "3000"
-
-[[services]]
-  protocol = "tcp"
-  internal_port = 3000
-  processes = ["app"]
-
-  [[services.ports]]
-    port = 80
-    handlers = ["http"]
-    force_https = true
-
-  [[services.ports]]
-    port = 443
-    handlers = ["tls", "http"]
-
-  [services.http_checks]
-    enabled = true
-    interval = "30s"
-    timeout = "5s"
-    grace_period = "40s"
-    method = "get"
-    path = "/"
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
 
 [[vm]]
-  memory = "512mb"
+  memory = '1gb'
+  cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 256
