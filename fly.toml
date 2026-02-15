@@ -1,5 +1,5 @@
 # Fly.io configuration
-app = "app-summer-glade-9002"
+app = "secure-line"
 primary_region = "ord"
 
 [build]
