@@ -1,0 +1,36 @@
+# Fly.io configuration
+app = "secure-line"
+primary_region = "ord"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 3000
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.http_checks]
+    enabled = true
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "40s"
+    method = "get"
+    path = "/"
+
+[[vm]]
+  memory = "512mb"
+  cpus = 1
