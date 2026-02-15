@@ -1,0 +1,17 @@
+{
+  "name": "secure-line",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "SDK-Media",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "ws": "^8.19.0"
+  }
+}

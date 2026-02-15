@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Secure Line</title>
+
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+
+  <body
+    class="bg-zinc-900 text-zinc-100 flex items-center justify-center min-h-screen"
+  >
+    <div
+      class="w-full max-w-2xl h-[90vh] flex flex-col rounded-2xl shadow-2xl border border-zinc-800 bg-zinc-950"
+    >
+      <!-- Header -->
+      <div
+        class="flex items-center justify-between px-6 py-4 border-b border-zinc-800"
+      >
+        <h1 class="text-lg font-semibold tracking-wide">🔒 Secure Line</h1>
+        <span id="status" class="text-sm text-yellow-400"> Connecting… </span>
+      </div>
+
+      <!-- Chat Log -->
+      <div
+        id="log"
+        class="flex-1 overflow-y-auto px-6 py-4 space-y-2 text-sm"
+      ></div>
+
+      <!-- Inside your body div -->
+      <div
+        id="debug"
+        class="text-xs text-zinc-400 px-6 py-2 overflow-auto h-32 border-t border-zinc-800"
+      ></div>
+
+      <!-- Input Bar -->
+      <div class="border-t border-zinc-800 p-4">
+        <div class="flex items-center gap-2">
+          <!-- Image Upload -->
+          <label class="cursor-pointer">
+            <input type="file" accept="image/*" class="hidden" />
+            <div
+              class="w-10 h-10 flex items-center justify-center rounded-lg bg-zinc-800 hover:bg-zinc-700 transition"
+            >
+              🖼️
+            </div>
+          </label>
+
+          <!-- Audio Button -->
+          <button
+            type="button"
+            class="w-10 h-10 flex items-center justify-center rounded-lg bg-zinc-800 hover:bg-zinc-700 transition"
+            title="Audio (coming soon)"
+          >
+            🎤
+          </button>
+
+          <!-- Text Input -->
+          <input
+            id="msg"
+            placeholder="Type a secure message…"
+            class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+
+          <!-- Send Button -->
+          <button
+            onclick="send()"
+            class="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-black font-medium transition"
+          >
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
