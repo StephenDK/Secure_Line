@@ -80,6 +80,20 @@ wss.on("connection", (ws) => {
         );
       }
       printSlots();
+      return;
+    }
+
+    if (msg.type === "image") {
+      const other = clients.find((c, i) => c && i !== slotIndex);
+      if (other && other.readyState === 1) {
+        other.send(JSON.stringify(msg));
+        console.log(`🖼️  Image from slot ${slotIndex} → slot ${other.slot}`);
+      } else {
+        console.log(
+          `⚠️ Image from slot ${slotIndex} could not be delivered — no peer`,
+        );
+      }
+      printSlots();
     }
   });
 

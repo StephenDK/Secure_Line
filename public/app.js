@@ -1,5 +1,12 @@
 const log = document.getElementById("log");
 const status = document.getElementById("status");
+const imageInput = document.getElementById("imageInput");
+const imageThumbnailContainer = document.getElementById(
+  "imageThumbnailContainer",
+);
+const imageThumbnail = document.getElementById("imageThumbnail");
+const msgInput = document.getElementById("msg");
+let pendingImage = null; // { buffer, mimeType }
 
 let ws;
 let keyPair;
@@ -17,6 +24,22 @@ function logMsg(msg) {
 
   div.textContent = msg;
   log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+// ───────── Logging Image helper ─────────
+function logImage(buffer, mimeType, isLocal) {
+  const blob = new Blob([buffer], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+
+  const img = document.createElement("img");
+  img.src = url;
+  img.className = "max-w-xs rounded-xl border border-zinc-700";
+
+  const wrapper = document.createElement("div");
+  wrapper.className = isLocal ? "text-right" : "text-left";
+  wrapper.appendChild(img);
+
+  log.appendChild(wrapper);
   log.scrollTop = log.scrollHeight;
 }
 
@@ -150,6 +173,22 @@ function connectWebSocket() {
       return;
     }
 
+    if (msg.type === "image") {
+      if (!sharedKey) return;
+
+      const iv = new Uint8Array(msg.iv);
+      const encrypted = new Uint8Array(msg.data);
+
+      const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv },
+        sharedKey,
+        encrypted,
+      );
+
+      logImage(decrypted, msg.mimeType, false);
+      return;
+    }
+
     if (msg.type === "message") {
       if (!sharedKey) {
         messageQueue.push(msg);
@@ -182,14 +221,105 @@ function retryConnect() {
 // ───────── Send message ─────────
 async function send() {
   if (!sharedKey) {
-    console.warn("⚠️ Cannot send message: key not established");
+    console.warn("⚠️ Cannot send: shared key not established");
     return;
   }
-  const input = document.getElementById("msg");
-  const encrypted = await encrypt(input.value);
+
+  // 1️⃣ If an image is pending, send image FIRST
+  if (pendingImage) {
+    console.log("📤 Sending pending image");
+
+    try {
+      await sendEncryptedImage(pendingImage.buffer, pendingImage.mimeType);
+      console.log("✅ Image sent successfully");
+    } catch (err) {
+      console.error("❌ Failed to send image:", err);
+      return;
+    }
+
+    // Display image in local chat log
+    logImage(pendingImage.buffer, pendingImage.mimeType, true);
+
+    // Clear UI after sending
+    pendingImage = null;
+    imageThumbnailContainer.classList.add("hidden");
+    msgInput.disabled = false;
+    msgInput.focus();
+    return;
+  }
+
+  // 2️⃣ Otherwise, send text message
+  if (!msgInput.value.trim()) {
+    console.log("ℹ️ Empty message, nothing to send");
+    return;
+  }
+
+  const encrypted = await encrypt(msgInput.value);
   ws.send(JSON.stringify({ type: "message", ...encrypted }));
-  logMsg("🟢 " + input.value);
-  input.value = "";
+
+  console.log("📤 Sent text message:", msgInput.value);
+  logMsg("🟢 " + msgInput.value);
+  msgInput.value = "";
+}
+
+async function sendEncryptedImage(buffer, mimeType) {
+  console.log("🔐 Encrypting image", mimeType, buffer.byteLength, "bytes");
+
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    sharedKey,
+    buffer,
+  );
+
+  ws.send(
+    JSON.stringify({
+      type: "image",
+      iv: Array.from(iv),
+      mimeType,
+      data: Array.from(new Uint8Array(encrypted)),
+    }),
+  );
+
+  console.log("📡 Encrypted image sent to server");
+}
+
+imageInput.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) {
+    console.log("🖼️ Image selection canceled");
+    return;
+  }
+
+  console.log("🖼️ Image selected:", file.name, file.type, file.size, "bytes");
+
+  const buffer = await file.arrayBuffer();
+
+  pendingImage = {
+    buffer,
+    mimeType: file.type,
+  };
+
+  console.log("🕓 Image stored locally, waiting for Send");
+
+  // Show thumbnail preview and disable text input
+  const blob = new Blob([buffer], { type: file.type });
+  const url = URL.createObjectURL(blob);
+  imageThumbnail.src = url;
+  imageThumbnailContainer.classList.remove("hidden");
+  msgInput.disabled = true;
+
+  imageInput.value = "";
+});
+
+// ───────── Clear pending image ─────────
+function clearImage() {
+  pendingImage = null;
+  imageThumbnailContainer.classList.add("hidden");
+  msgInput.disabled = false;
+  msgInput.focus();
+  console.log("🗑️ Pending image cleared");
 }
 
 // ───────── Initial connect ─────────
