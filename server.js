@@ -8,37 +8,67 @@ app.use(express.static("public"));
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-const clients = new Array(2).fill(null);
-const clientKeys = new Array(2).fill(null);
+const rooms = new Map();
 
-function printSlots() {
-  console.log("🗂 Current slots:");
-  clients.forEach((c, i) => {
-    console.log(`  Slot ${i}: ${c ? "CONNECTED" : "EMPTY"}`);
-  });
-}
+// const clients = new Array(2).fill(null);
+// const clientKeys = new Array(2).fill(null);
 
-wss.on("connection", (ws) => {
-  const slotIndex = clients.findIndex((c) => c === null);
-  if (slotIndex === -1) {
-    ws.send(JSON.stringify({ type: "error", message: "Max clients reached" }));
-    ws.close();
-    console.log("❌ Connection rejected — max clients reached");
-    printSlots();
+function printRooms() {
+  console.log("🗂 Current rooms:");
+  if (rooms.size === 0) {
+    console.log("  (no active rooms)");
     return;
   }
 
-  ws.slot = slotIndex;
-  clients[slotIndex] = ws;
-  console.log(`🟢 Client connected in slot ${slotIndex}`);
-  printSlots();
+  for (const [roomId, room] of rooms.entries()) {
+    console.log(`  Room ${roomId}:`);
+    room.clients.forEach((c, i) => {
+      console.log(`    Slot ${i}: ${c ? "CONNECTED" : "EMPTY"}`);
+    });
+  }
+}
 
-  // Send existing pubkey from the other client
+function getOrCreateRoom(roomId) {
+  if (!rooms.has(roomId)) {
+    rooms.set(roomId, {
+      clients: [null, null],
+      clientKeys: [null, null],
+    });
+    console.log(`🆕 Room created: ${roomId}`);
+  }
+  return rooms.get(roomId);
+}
+
+wss.on("connection", (ws, req) => {
+  const params = new URL(req.url, "http://localhost").searchParams;
+  const roomId = params.get("room");
+
+  if (!roomId) {
+    ws.send(JSON.stringify({ type: "error", message: "Missing room ID" }));
+    ws.close();
+    return;
+  }
+
+  const room = getOrCreateRoom(roomId);
+  const slotIndex = room.clients.findIndex((c) => c === null);
+
+  if (slotIndex === -1) {
+    ws.send(JSON.stringify({ type: "error", message: "Room full" }));
+    ws.close();
+    console.log(`❌ Room ${roomId} full`);
+    return;
+  }
+
+  ws.roomId = roomId;
+  ws.slot = slotIndex;
+  room.clients[slotIndex] = ws;
+
+  console.log(`🟢 Client joined room ${roomId} slot ${slotIndex}`);
+
   const otherIndex = slotIndex === 0 ? 1 : 0;
-  if (clients[otherIndex] && clientKeys[otherIndex]) {
-    ws.send(JSON.stringify({ type: "pubkey", data: clientKeys[otherIndex] }));
-    console.log(
-      `➡️ Sent existing pubkey from slot ${otherIndex} to slot ${slotIndex}`,
+  if (room.clients[otherIndex] && room.clientKeys[otherIndex]) {
+    ws.send(
+      JSON.stringify({ type: "pubkey", data: room.clientKeys[otherIndex] }),
     );
   }
 
@@ -47,73 +77,48 @@ wss.on("connection", (ws) => {
     try {
       msg = JSON.parse(data);
     } catch {
-      console.warn("⚠️ Invalid JSON from slot", slotIndex, ":", data);
+      console.warn("⚠️ Invalid JSON in room", roomId, ":", data);
       return;
     }
 
+    console.log(
+      `📩 Room ${roomId} | Slot ${slotIndex} → ${otherIndex} | ${msg.type}`,
+    );
     if (msg.type === "pubkey") {
-      clientKeys[slotIndex] = msg.data;
-      console.log(
-        `🔑 Stored pubkey for slot ${slotIndex}: ${msg.data.slice(0, 8)}...`,
-      );
-
-      // Forward to the other client
-      const other = clients.find((c, i) => c && i !== slotIndex);
+      room.clientKeys[slotIndex] = msg.data;
+      const other = room.clients[otherIndex];
       if (other && other.readyState === 1) {
         other.send(JSON.stringify(msg));
-        console.log(
-          `➡️ Forwarded pubkey from slot ${slotIndex} to slot ${other.slot}`,
-        );
       }
-      printSlots();
       return;
     }
 
-    if (msg.type === "message") {
-      const other = clients.find((c, i) => c && i !== slotIndex);
+    if (msg.type === "message" || msg.type === "image") {
+      const other = room.clients[otherIndex];
       if (other && other.readyState === 1) {
         other.send(JSON.stringify(msg));
-        console.log(`📩 Message from slot ${slotIndex} → slot ${other.slot}`);
-      } else {
-        console.log(
-          `⚠️ Message from slot ${slotIndex} could not be delivered — no peer`,
-        );
       }
-      printSlots();
-      return;
-    }
-
-    if (msg.type === "image") {
-      const other = clients.find((c, i) => c && i !== slotIndex);
-      if (other && other.readyState === 1) {
-        other.send(JSON.stringify(msg));
-        console.log(`🖼️  Image from slot ${slotIndex} → slot ${other.slot}`);
-      } else {
-        console.log(
-          `⚠️ Image from slot ${slotIndex} could not be delivered — no peer`,
-        );
-      }
-      printSlots();
     }
   });
 
   ws.on("close", () => {
-    console.log(`🔴 Client disconnected from slot ${slotIndex}`);
-    clients[slotIndex] = null;
-    clientKeys[slotIndex] = null;
+    console.log(`🔴 Client left room ${roomId} slot ${slotIndex}`);
+    room.clients[slotIndex] = null;
+    room.clientKeys[slotIndex] = null;
 
-    // Notify the other client
-    const other = clients.find((c, i) => c && i !== slotIndex);
+    const other = room.clients[otherIndex];
     if (other && other.readyState === 1) {
       other.send(JSON.stringify({ type: "peer_disconnected" }));
-      console.log(`ℹ️ Notified slot ${other.slot} that peer disconnected`);
     }
-    printSlots();
-  });
 
+    if (!room.clients[0] && !room.clients[1]) {
+      rooms.delete(roomId);
+      console.log(`🗑 Room deleted: ${roomId}`);
+    }
+  });
   ws.on("error", (err) => {
     console.error(`⚠️ WS error in slot ${ws.slot}:`, err.message);
-    printSlots();
+    printRooms();
   });
 });
 
@@ -121,5 +126,5 @@ const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => {
   console.log(`🚀 Secure line running on http://localhost:${PORT}`);
-  printSlots();
+  printRooms();
 });

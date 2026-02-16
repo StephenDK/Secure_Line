@@ -1,3 +1,5 @@
+import { initVideoMessaging } from "./modules/video.js";
+
 const log = document.getElementById("log");
 const status = document.getElementById("status");
 const imageInput = document.getElementById("imageInput");
@@ -6,7 +8,13 @@ const imageThumbnailContainer = document.getElementById(
 );
 const imageThumbnail = document.getElementById("imageThumbnail");
 const msgInput = document.getElementById("msg");
+const videoInput = document.getElementById("videoInput");
+
+document.getElementById("sendBtn").addEventListener("click", onSend);
+
 let pendingImage = null; // { buffer, mimeType }
+let pendingVideo = null; // { buffer, mimeType }
+let videoAPI = null;
 
 let ws;
 let keyPair;
@@ -14,6 +22,22 @@ let sharedKey = null;
 let theirPublicKey = null;
 let localPublicKeySent = false;
 let messageQueue = [];
+
+function getRoomId() {
+  const params = new URLSearchParams(location.search);
+  let room = params.get("room");
+
+  if (!room) {
+    room = crypto.randomUUID().slice(0, 8);
+    params.set("room", room);
+    history.replaceState({}, "", `?${params.toString()}`);
+  }
+
+  return room;
+}
+
+const roomId = getRoomId();
+console.log("🧩 Room ID:", roomId);
 
 // ───────── Logging helper ─────────
 function logMsg(msg) {
@@ -91,6 +115,14 @@ async function deriveSharedKey(pubBytes) {
     logMsg("❤️ " + text);
   }
   messageQueue = [];
+
+  // Initialize video messaging helper now that sharedKey exists
+  try {
+    videoAPI = initVideoMessaging(ws, sharedKey, log);
+    console.log("🎬 Video module initialized");
+  } catch (err) {
+    console.warn("⚠️ Video module init failed:", err);
+  }
 }
 
 async function encrypt(text) {
@@ -120,7 +152,7 @@ let stopRetrying = false; // NEW: flag to stop reconnect attempts
 // ───────── WebSocket setup with retry ─────────
 function connectWebSocket() {
   const protocol = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${protocol}://${location.host}`);
+  ws = new WebSocket(`${protocol}://${location.host}?room=${roomId}`);
 
   ws.onopen = async () => {
     console.log("✅ WebSocket connected");
@@ -204,10 +236,15 @@ function connectWebSocket() {
   };
 
   ws.onclose = () => {
-    console.log("🔄 WebSocket closed, retrying in 3s…");
-    status.textContent = "🔄 Disconnected. Retrying…";
-    retryConnect();
+    console.log("🔴 WebSocket closed");
+    status.textContent = "❌ Disconnected. Refresh to reconnect.";
   };
+
+  //   ws.onclose = () => {
+  //     console.log("🔄 WebSocket closed, retrying in 3s…");
+  //     status.textContent = "🔄 Disconnected. Retrying…";
+  //     retryConnect();
+  //   };
 }
 
 // ───────── Retry logic ─────────
@@ -219,7 +256,7 @@ function retryConnect() {
 }
 
 // ───────── Send message ─────────
-async function send() {
+async function onSend() {
   if (!sharedKey) {
     console.warn("⚠️ Cannot send: shared key not established");
     return;
@@ -321,6 +358,34 @@ function clearImage() {
   msgInput.focus();
   console.log("🗑️ Pending image cleared");
 }
+
+// ───────── Share Link Event Handler ─────────
+document.getElementById("shareBtn").onclick = async () => {
+  const url = location.href;
+
+  try {
+    if (navigator.share) {
+      await navigator.share({
+        title: "Secure Line",
+        url,
+      });
+    } else {
+      await navigator.clipboard.writeText(url);
+      alert("Invite link copied to clipboard");
+    }
+  } catch (err) {
+    console.error("Share failed:", err);
+  }
+};
+// ───────── QR Link Event Handler ─────────
+
+document.getElementById("qrBtn").onclick = () => {
+  const url = location.href;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+    url,
+  )}`;
+  window.open(qrUrl, "_blank");
+};
 
 // ───────── Initial connect ─────────
 connectWebSocket();
