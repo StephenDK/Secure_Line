@@ -1,4 +1,4 @@
-import { CLIP_TTL_MS } from "../utils/limits.js";
+const CLIP_TTL_MS = 60_000;
 const log = document.getElementById("log");
 const status = document.getElementById("status");
 const imageInput = document.getElementById("imageInput");
@@ -531,6 +531,35 @@ document.getElementById("qrBtn").onclick = () => {
   )}`;
   window.open(qrUrl, "_blank");
 };
+
+// ───────── Terms of Service Gate ─────────
+const tosModal = document.getElementById("tosModal");
+const acceptTos = document.getElementById("acceptTos");
+const declineTos = document.getElementById("declineTos");
+
+if (!tosModal || !acceptTos || !declineTos) {
+  console.error("❌ TOS modal elements not found");
+} else {
+  const TOS_KEY = "secureline_tos_accepted";
+
+  if (localStorage.getItem(TOS_KEY) === "true") {
+    tosModal.remove();
+  } else {
+    // Block app interaction until accepted
+    document.body.style.overflow = "hidden";
+  }
+
+  acceptTos.onclick = () => {
+    localStorage.setItem(TOS_KEY, "true");
+    tosModal.remove();
+    document.body.style.overflow = "";
+  };
+
+  declineTos.onclick = () => {
+    alert("You must accept the Terms of Service to use Secure Line.");
+    window.location.href = "about:blank";
+  };
+}
 
 // ───────── Initial connect ─────────
 connectWebSocket();
