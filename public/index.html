@@ -145,11 +145,11 @@
         class="flex-1 overflow-y-auto px-6 py-4 space-y-2 text-sm"
       ></div>
 
-      <!-- Debug / Logs -->
+      <!-- Debug / Logs
       <div
         id="debug"
         class="text-xs text-zinc-400 px-6 py-2 overflow-auto h-32 border-t border-zinc-800"
-      ></div>
+      ></div> -->
 
       <!-- Image Thumbnail Preview -->
       <div
@@ -170,7 +170,7 @@
       <!-- Fake Video Thumbnail Preview -->
       <div
         id="videoThumbnailContainer"
-        class="hidden relative w-32 h-20 rounded-lg overflow-hidden border border-zinc-700 bg-zinc-800"
+        class="hidden relative max-w-[40%] h-32 rounded-lg overflow-hidden border border-zinc-700 bg-zinc-800"
       >
         <!-- Dark overlay with heart icon -->
         <div
@@ -179,14 +179,6 @@
         >
           <span class="text-2xl text-red-500">❤️</span>
         </div>
-
-        <!-- Optional faint background image for style -->
-        <img
-          id="videoThumbnail"
-          class="w-full h-full object-cover opacity-20"
-          src="generic-background.jpg"
-          alt="video placeholder"
-        />
 
         <!-- Clear button -->
         <button

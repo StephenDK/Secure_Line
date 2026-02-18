@@ -11,10 +11,10 @@ const videoInput = document.getElementById("videoInput");
 
 document.getElementById("sendBtn").addEventListener("click", onSend);
 
-import { generateVideoThumbnail } from "./utils/videoHelpers.js";
-
 let pendingImage = null; // { buffer, mimeType }
 let pendingVideo = null; // { buffer, mimeType }
+
+let pendingMediaLoader = null;
 
 let ws;
 let keyPair;
@@ -197,6 +197,11 @@ function connectWebSocket() {
       return;
     }
 
+    if (msg.type === "media_incoming") {
+      pendingMediaLoader = logLoadingCard(msg.mediaType);
+      return;
+    }
+
     if (msg.type === "clip_available") {
       showIncomingClipPrompt(msg);
       return;
@@ -213,6 +218,11 @@ function connectWebSocket() {
         sharedKey,
         encrypted,
       );
+
+      if (pendingMediaLoader) {
+        pendingMediaLoader.remove();
+        pendingMediaLoader = null;
+      }
 
       logImage(decrypted, msg.mimeType, false);
       return;
@@ -299,7 +309,7 @@ async function onSend() {
         clipId,
         iv: Array.from(iv),
         mimeType: pendingVideo.mimeType,
-        expiresIn: CLIP_TTL_MS,
+        expiresIn: Math.floor(CLIP_TTL_MS / 1000),
       }),
     );
 
@@ -328,6 +338,12 @@ async function onSend() {
 
 async function sendEncryptedImage(buffer, mimeType) {
   console.log("🔐 Encrypting image", mimeType, buffer.byteLength, "bytes");
+  ws.send(
+    JSON.stringify({
+      type: "media_incoming",
+      mediaType: "image",
+    }),
+  );
 
   const iv = crypto.getRandomValues(new Uint8Array(12));
 
@@ -377,6 +393,29 @@ imageInput.addEventListener("change", async (e) => {
   imageInput.value = "";
 });
 
+function logLoadingCard(mediaType) {
+  const wrapper = document.createElement("div");
+  wrapper.className =
+    "self-start max-w-[80%] bg-zinc-800 px-4 py-3 rounded-xl flex items-center gap-3";
+
+  const icon = document.createElement("iconify-icon");
+  icon.setAttribute("icon", "svg-spinners:180-ring");
+  icon.className = "text-emerald-400 text-xl";
+
+  const text = document.createElement("span");
+  text.className = "text-zinc-300 text-sm";
+  text.textContent =
+    mediaType === "video" ? "Incoming video…" : "Incoming image…";
+
+  wrapper.appendChild(icon);
+  wrapper.appendChild(text);
+
+  log.appendChild(wrapper);
+  log.scrollTop = log.scrollHeight;
+
+  return wrapper; // 👈 IMPORTANT
+}
+
 // ───────── Video Helpers ─────────
 async function encryptBinary(buffer) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -395,34 +434,37 @@ async function decryptBinary(iv, encrypted) {
 function showIncomingClipPrompt(msg) {
   let remaining = msg.expiresIn;
 
-  const prompt = document.createElement("div");
-  prompt.className =
-    "bg-yellow-900 text-yellow-200 p-3 rounded-lg flex justify-between items-center";
+  const wrapper = document.createElement("div");
+  wrapper.className =
+    "self-start max-w-[40%] cursor-pointer rounded-xl border border-zinc-700 bg-zinc-900 hover:border-emerald-500 transition flex flex-col items-center justify-center h-40";
 
-  const text = document.createElement("span");
-  text.textContent = `🎬 Incoming video (${remaining}s)`;
+  const icon = document.createElement("iconify-icon");
+  icon.setAttribute("icon", "mdi:video");
+  icon.className = "text-emerald-400 text-5xl mb-2";
 
-  const btn = document.createElement("button");
-  btn.textContent = "Accept";
-  btn.className =
-    "ml-4 px-3 py-1 rounded bg-emerald-600 text-black font-medium";
+  const label = document.createElement("div");
+  label.className = "text-zinc-300 text-sm";
+  label.textContent = `🎬 Incoming video · ${remaining}s`;
 
-  prompt.appendChild(text);
-  prompt.appendChild(btn);
-  log.appendChild(prompt);
+  wrapper.appendChild(icon);
+  wrapper.appendChild(label);
+  log.appendChild(wrapper);
+  log.scrollTop = log.scrollHeight;
 
   const interval = setInterval(() => {
     remaining--;
-    text.textContent = `🎬 Incoming video (${remaining}s)`;
+    label.textContent = `🎬 Incoming video · ${remaining}s`;
+
     if (remaining <= 0) {
       clearInterval(interval);
-      prompt.remove();
+      wrapper.classList.add("opacity-50");
+      wrapper.remove();
     }
   }, 1000);
 
-  btn.onclick = async () => {
+  wrapper.onclick = async () => {
     clearInterval(interval);
-    prompt.remove();
+    wrapper.remove();
 
     ws.send(
       JSON.stringify({
@@ -432,7 +474,6 @@ function showIncomingClipPrompt(msg) {
     );
 
     const res = await fetch(`/clips/${msg.clipId}?roomId=${roomId}`);
-
     if (!res.ok) {
       alert("❌ Video expired");
       return;
