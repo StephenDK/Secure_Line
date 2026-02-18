@@ -1,3 +1,4 @@
+import { CLIP_TTL_MS } from "../utils/limits.js";
 const log = document.getElementById("log");
 const status = document.getElementById("status");
 const imageInput = document.getElementById("imageInput");
@@ -298,7 +299,7 @@ async function onSend() {
         clipId,
         iv: Array.from(iv),
         mimeType: pendingVideo.mimeType,
-        expiresIn: 30,
+        expiresIn: CLIP_TTL_MS,
       }),
     );
 
