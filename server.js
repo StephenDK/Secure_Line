@@ -2,42 +2,19 @@ import express from "express";
 import http from "http";
 import { WebSocketServer } from "ws";
 
+import clipRoutes from "./routes/clipRoutes.js";
+import { acceptClip } from "./modules/video/clipStore.js";
+
 const app = express();
 app.use(express.static("public"));
+app.use("/clips", clipRoutes);
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+const PORT = process.env.PORT || 3000;
+
 const rooms = new Map();
-
-// const clients = new Array(2).fill(null);
-// const clientKeys = new Array(2).fill(null);
-
-function printRooms() {
-  console.log("🗂 Current rooms:");
-  if (rooms.size === 0) {
-    console.log("  (no active rooms)");
-    return;
-  }
-
-  for (const [roomId, room] of rooms.entries()) {
-    console.log(`  Room ${roomId}:`);
-    room.clients.forEach((c, i) => {
-      console.log(`    Slot ${i}: ${c ? "CONNECTED" : "EMPTY"}`);
-    });
-  }
-}
-
-function getOrCreateRoom(roomId) {
-  if (!rooms.has(roomId)) {
-    rooms.set(roomId, {
-      clients: [null, null],
-      clientKeys: [null, null],
-    });
-    console.log(`🆕 Room created: ${roomId}`);
-  }
-  return rooms.get(roomId);
-}
 
 wss.on("connection", (ws, req) => {
   const params = new URL(req.url, "http://localhost").searchParams;
@@ -84,17 +61,30 @@ wss.on("connection", (ws, req) => {
     console.log(
       `📩 Room ${roomId} | Slot ${slotIndex} → ${otherIndex} | ${msg.type}`,
     );
+
+    const other = room.clients[otherIndex];
+
     if (msg.type === "pubkey") {
       room.clientKeys[slotIndex] = msg.data;
-      const other = room.clients[otherIndex];
       if (other && other.readyState === 1) {
         other.send(JSON.stringify(msg));
       }
       return;
     }
 
+    // 🎥 clip notification
+    if (msg.type === "clip_available") {
+      if (other?.readyState === 1) other.send(JSON.stringify(msg));
+      return;
+    }
+
+    // ✅ clip acceptance
+    if (msg.type === "clip_accept") {
+      acceptClip(msg.clipId);
+      return;
+    }
+
     if (msg.type === "message" || msg.type === "image") {
-      const other = room.clients[otherIndex];
       if (other && other.readyState === 1) {
         other.send(JSON.stringify(msg));
       }
@@ -122,7 +112,31 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
+function printRooms() {
+  console.log("🗂 Current rooms:");
+  if (rooms.size === 0) {
+    console.log("  (no active rooms)");
+    return;
+  }
+
+  for (const [roomId, room] of rooms.entries()) {
+    console.log(`  Room ${roomId}:`);
+    room.clients.forEach((c, i) => {
+      console.log(`    Slot ${i}: ${c ? "CONNECTED" : "EMPTY"}`);
+    });
+  }
+}
+
+function getOrCreateRoom(roomId) {
+  if (!rooms.has(roomId)) {
+    rooms.set(roomId, {
+      clients: [null, null],
+      clientKeys: [null, null],
+    });
+    console.log(`🆕 Room created: ${roomId}`);
+  }
+  return rooms.get(roomId);
+}
 
 server.listen(PORT, () => {
   console.log(`🚀 Secure line running on http://localhost:${PORT}`);

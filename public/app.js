@@ -1,5 +1,3 @@
-import { initVideoMessaging } from "./modules/video.js";
-
 const log = document.getElementById("log");
 const status = document.getElementById("status");
 const imageInput = document.getElementById("imageInput");
@@ -12,9 +10,10 @@ const videoInput = document.getElementById("videoInput");
 
 document.getElementById("sendBtn").addEventListener("click", onSend);
 
+import { generateVideoThumbnail } from "./utils/videoHelpers.js";
+
 let pendingImage = null; // { buffer, mimeType }
 let pendingVideo = null; // { buffer, mimeType }
-let videoAPI = null;
 
 let ws;
 let keyPair;
@@ -115,14 +114,6 @@ async function deriveSharedKey(pubBytes) {
     logMsg("❤️ " + text);
   }
   messageQueue = [];
-
-  // Initialize video messaging helper now that sharedKey exists
-  try {
-    videoAPI = initVideoMessaging(ws, sharedKey, log);
-    console.log("🎬 Video module initialized");
-  } catch (err) {
-    console.warn("⚠️ Video module init failed:", err);
-  }
 }
 
 async function encrypt(text) {
@@ -202,6 +193,11 @@ function connectWebSocket() {
       } catch (err) {
         console.error("❌ deriveSharedKey failed:", err);
       }
+      return;
+    }
+
+    if (msg.type === "clip_available") {
+      showIncomingClipPrompt(msg);
       return;
     }
 
@@ -285,6 +281,36 @@ async function onSend() {
     return;
   }
 
+  if (pendingVideo) {
+    const clipId = crypto.randomUUID();
+
+    const { iv, encrypted } = await encryptBinary(pendingVideo.buffer);
+
+    await fetch(`/clips/upload?roomId=${roomId}&clipId=${clipId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: encrypted,
+    });
+
+    ws.send(
+      JSON.stringify({
+        type: "clip_available",
+        clipId,
+        iv: Array.from(iv),
+        mimeType: pendingVideo.mimeType,
+        expiresIn: 30,
+      }),
+    );
+
+    logVideo(pendingVideo.buffer, pendingVideo.mimeType, true);
+
+    pendingVideo = null;
+    videoThumbnailContainer.classList.add("hidden");
+    msgInput.disabled = false;
+    msgInput.focus();
+    return;
+  }
+
   // 2️⃣ Otherwise, send text message
   if (!msgInput.value.trim()) {
     console.log("ℹ️ Empty message, nothing to send");
@@ -350,14 +376,132 @@ imageInput.addEventListener("change", async (e) => {
   imageInput.value = "";
 });
 
+// ───────── Video Helpers ─────────
+async function encryptBinary(buffer) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    sharedKey,
+    buffer,
+  );
+  return { iv, encrypted };
+}
+
+async function decryptBinary(iv, encrypted) {
+  return crypto.subtle.decrypt({ name: "AES-GCM", iv }, sharedKey, encrypted);
+}
+
+function showIncomingClipPrompt(msg) {
+  let remaining = msg.expiresIn;
+
+  const prompt = document.createElement("div");
+  prompt.className =
+    "bg-yellow-900 text-yellow-200 p-3 rounded-lg flex justify-between items-center";
+
+  const text = document.createElement("span");
+  text.textContent = `🎬 Incoming video (${remaining}s)`;
+
+  const btn = document.createElement("button");
+  btn.textContent = "Accept";
+  btn.className =
+    "ml-4 px-3 py-1 rounded bg-emerald-600 text-black font-medium";
+
+  prompt.appendChild(text);
+  prompt.appendChild(btn);
+  log.appendChild(prompt);
+
+  const interval = setInterval(() => {
+    remaining--;
+    text.textContent = `🎬 Incoming video (${remaining}s)`;
+    if (remaining <= 0) {
+      clearInterval(interval);
+      prompt.remove();
+    }
+  }, 1000);
+
+  btn.onclick = async () => {
+    clearInterval(interval);
+    prompt.remove();
+
+    ws.send(
+      JSON.stringify({
+        type: "clip_accept",
+        clipId: msg.clipId,
+      }),
+    );
+
+    const res = await fetch(`/clips/${msg.clipId}?roomId=${roomId}`);
+
+    if (!res.ok) {
+      alert("❌ Video expired");
+      return;
+    }
+
+    const encrypted = await res.arrayBuffer();
+    const decrypted = await decryptBinary(new Uint8Array(msg.iv), encrypted);
+
+    logVideo(decrypted, msg.mimeType, false);
+  };
+}
+
+videoInput.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  if (file.size > 10 * 1024 * 1024) {
+    alert("❌ Video too large (max 10MB)");
+    return;
+  }
+
+  const buffer = await file.arrayBuffer();
+  pendingVideo = { buffer, mimeType: file.type };
+
+  // Show fake thumbnail container
+  const container = document.getElementById("videoThumbnailContainer");
+  container.classList.remove("hidden");
+
+  // Clear file input to allow re-selecting same file
+  videoInput.value = "";
+});
+
+function logVideo(buffer, mimeType, isLocal) {
+  const wrapper = document.createElement("div");
+  wrapper.className = isLocal
+    ? "self-end max-w-[80%]"
+    : "self-start max-w-[80%]";
+
+  // Create video element
+  const video = document.createElement("video");
+  video.controls = true;
+  video.className = "w-64 h-36 rounded-lg border border-zinc-700 object-cover";
+
+  // Convert buffer to Blob and set as source
+  const blob = new Blob([buffer], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  video.src = url;
+
+  wrapper.appendChild(video);
+  log.appendChild(wrapper);
+  log.scrollTop = log.scrollHeight;
+}
+
+document.getElementById("clear_video").onclick = async () => {
+  pendingVideo = null;
+  const container = document.getElementById("videoThumbnailContainer");
+  container.classList.add("hidden");
+  msgInput.disabled = false;
+  msgInput.focus();
+  console.log("🗑️ Pending video cleared");
+};
+
 // ───────── Clear pending image ─────────
-function clearImage() {
+document.getElementById("clear_image").onclick = async () => {
   pendingImage = null;
   imageThumbnailContainer.classList.add("hidden");
   msgInput.disabled = false;
   msgInput.focus();
   console.log("🗑️ Pending image cleared");
-}
+};
 
 // ───────── Share Link Event Handler ─────────
 document.getElementById("shareBtn").onclick = async () => {

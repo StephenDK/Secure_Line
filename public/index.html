@@ -100,8 +100,37 @@
           class="h-20 rounded-lg border border-zinc-700"
         />
         <button
-          onclick="clearImage()"
+          id="clear_image"
           class="px-3 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition"
+        >
+          Clear
+        </button>
+      </div>
+      <!-- Fake Video Thumbnail Preview -->
+      <div
+        id="videoThumbnailContainer"
+        class="hidden relative w-32 h-20 rounded-lg overflow-hidden border border-zinc-700 bg-zinc-800"
+      >
+        <!-- Dark overlay with heart icon -->
+        <div
+          id="videoThumbnailOverlay"
+          class="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center"
+        >
+          <span class="text-2xl text-red-500">❤️</span>
+        </div>
+
+        <!-- Optional faint background image for style -->
+        <img
+          id="videoThumbnail"
+          class="w-full h-full object-cover opacity-20"
+          src="generic-background.jpg"
+          alt="video placeholder"
+        />
+
+        <!-- Clear button -->
+        <button
+          id="clear_video"
+          class="absolute top-1 right-1 px-2 py-1 rounded bg-red-600 hover:bg-red-500 text-white text-sm font-medium"
         >
           Clear
         </button>
